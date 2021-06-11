@@ -1,60 +1,74 @@
 const readline = require("readline");
-const {get} = require("https");
-const {apiKey} = require("./config.json");
+const { get } = require("https");
+const API_KEY = require("./key.json");
 
-const modes = {
-	"standard": "0", "s": "0",
-	"taiko": "1", "t": "1",
-	"catch": "2", "c": "2",
-	"mania": "3", "m": "3"
-};
+const MODES = [
+	{ name: "osu!", names: ["osu", "standard"], id: "0" },
+	{ name: "osu!taiko", names: ["taiko"], id: "1" },
+	{ name: "osu!catch", names: ["catch"], id: "2" },
+	{ name: "osu!mania", names: ["mania"], id: "3" }
+];
 
-const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout
-});
+const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
-function ask(question) { return new Promise(resolve => rl.question(question, data => resolve(data))); }
+function prompt(string, expectAnswer) {
+	return expectAnswer
+		? new Promise(resolve => rl.question(`\n${string}:\n`, resolve))
+		: console.log(`\n${string}`);
+}
 
-(async () => {
-	const name = await ask("Provide the player name:\n");
-	
-	const mode = await (async () => {
-		let data = await ask("Provide the mode - standard (s), taiko (t), catch (c), or mania (m):\n");
-		data = data.toLowerCase();
-		
-		if (!modes[data]) {
-			console.log("Invalid mode. Using standard as default.");
-			return "0";
-		}
-		
-		return data;
-	})();
-	
-	rl.close();
-	console.log("Fetching user...");
-	
-	get(`https://osu.ppy.sh/api/get_user?k=${apiKey}&m=${modes[mode]}&u=${encodeURIComponent(name)}`, res => {
-		let data = "";
-		
-		res.on("data", chunk => data += chunk);
-		
-		res.on("end", () => {
-			let json = JSON.parse(data);
-			if (!json[0]) return console.log("User not found.");
-			json = json[0];
-			
-			console.log("\n" + [
-				["Name", `${json.username} (#${parseInt(json.pp_rank).toLocaleString()})`],
+async function start() {
+	const name = await prompt("Enter a player's username", true);
+
+	let mode = (
+		await prompt(
+			"Provide the mode - osu/standard (o/s), taiko (t), catch (c), or mania (m)",
+			true
+		)
+	).toLowerCase();
+
+	mode = MODES.find(_mode => _mode.names.some(_name => _name.startsWith(mode))) ?? MODES[0];
+
+	prompt("Fetching user...");
+
+	const [json] = await new Promise(resolve =>
+		get(
+			`https://osu.ppy.sh/api/get_user?k=${API_KEY}&m=${mode.id}&u=${encodeURIComponent(
+				name
+			)}`,
+			res => {
+				let data = "";
+				res.on("data", chunk => (data += chunk));
+				res.on("end", () => resolve(JSON.parse(data)));
+			}
+		)
+	);
+
+	if (!json) return prompt("User not found.");
+
+	prompt(
+		`${mode.name} statistics for ${json.username}\n\n` +
+			[
+				["Username", `${json.username} (#${parseInt(json.pp_rank).toLocaleString()})`],
 				["ID", json.user_id],
-				["Country", `${json.country} (#${parseInt(json.pp_country_rank).toLocaleString()})`],
+				[
+					"Country",
+					`${json.country} (#${parseInt(json.pp_country_rank).toLocaleString()})`
+				],
 				["Created", json.join_date],
 				["Performance Points", `${Math.floor(json.pp_raw).toLocaleString()}pp`],
 				["Level", Math.floor(json.level)],
 				["Accuracy", `${parseFloat(json.accuracy).toFixed(2)}%`],
-				
-				["Play Count", json.playcount ? parseInt(json.playcount).toLocaleString() : 0]
-			].map(x => `${x[0]}: ${x[1]}`).join("\n"));
-		});
-	});
-})();
+				["Play Count", parseInt(json.playcount ?? 0).toLocaleString()]
+			]
+				.map(([_key, _value]) => `${_key}: ${_value}`)
+				.join("\n")
+	);
+
+	return (await prompt("Want to search for another player? (y/n)", true))[0]?.toLowerCase() ===
+		"y"
+		? start()
+		: process.exit();
+}
+
+start();

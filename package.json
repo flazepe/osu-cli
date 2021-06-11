@@ -3,9 +3,6 @@
 	"description": "A simple CLI to view osu! players' profiles.",
 	"version": "0.0.1",
 	"main": "index.js",
-	"engines": {
-		"node": "12.16.2"
-	},
 	"scripts": {
 		"start": "node index.js"
 	},
